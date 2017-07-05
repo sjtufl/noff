@@ -20,6 +20,7 @@
 #include <muduo/base/Singleton.h>
 #include <muduo/base/CountDownLatch.h>
 #include <dpi/Udp.h>
+#include <app/header/TcpSession.h>
 
 
 #include "Capture.h"
@@ -52,6 +53,7 @@ unique_ptr<UdpClient>   dnsResponseOutput = NULL;
 unique_ptr<UdpClient>   tcpHeaderOutput = NULL;
 unique_ptr<UdpClient>   macCounterOutput = NULL;
 unique_ptr<UdpClient>   packetCounterOutput = NULL;
+unique_ptr<UdpClient>   tcpSessionOutPut = NULL;
 
 void sigHandler(int)
 {
@@ -170,6 +172,20 @@ void setTcpHeaderInThread()
             &UdpClient::onData<tcpheader>, tcpHeaderOutput.get(), _1));
 }
 
+void setTcpSessionInThread()
+{
+    assert(tcpSession != NULL);
+
+    auto& ip = threadInstance(IpFragment);
+    auto& session = threadInstance(TcpSession);
+
+    ip.addTcpCallback(bind(
+            &TcpSession::onTcpData, &session, _1, _2, _3));
+
+    session.addTcpSessionCallback(bind(
+            &UdpClient::onData<SessionData>, tcpSessionOutPut.get(), _1));
+}
+
 void initInThread()
 {
     assert(cap != NULL);
@@ -265,6 +281,8 @@ int main(int argc, char **argv)
     tcpHeaderOutput.reset(new UdpClient({ ip_addr, port2++}, "tcp header"));
     macCounterOutput.reset(new UdpClient({ ip_addr, port2++ }, "mac counter"));
     packetCounterOutput.reset(new UdpClient({ip_addr, port2++}, "packet counter"));
+
+    tcpSessionOutPut.reset(new UdpClient({ip_addr, port2++}, "tcp session"));
 
     countDown.reset(new muduo::CountDownLatch(nWorkers));
 
