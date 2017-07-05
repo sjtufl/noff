@@ -33,7 +33,7 @@
 #include "dns/Dnsparser.h"
 #include "header/TcpHeader.h"
 #include "UdpClient.h"
-#include "header/TcpHeader.h"
+#include "header/TcpSession.h"
 
 using namespace std;
 
@@ -174,7 +174,7 @@ void setTcpHeaderInThread()
 
 void setTcpSessionInThread()
 {
-    assert(tcpSession != NULL);
+    assert(tcpSessionOutPut != NULL);
 
     auto& ip = threadInstance(IpFragment);
     auto& session = threadInstance(TcpSession);
