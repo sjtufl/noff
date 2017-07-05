@@ -214,6 +214,8 @@ void initInThread()
     // tcp->udp
     setTcpHeaderInThread();
 
+    setTcpSessionInThread();
+
     countDown->countDown();
 }
 
