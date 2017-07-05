@@ -16,6 +16,11 @@ public:
     {}
     bool checkTime(timeval TimeStamp);
 
+    timeval lastCheckTime() const
+    {
+        return { time - 1, 0 };
+    }
+
 private:
     __time_t time;
 
