@@ -15,7 +15,7 @@ PFCapture::PFCapture(const std::string &deviceAndQueue, int snaplen, bool isLoop
         :running_(false),
          name_(deviceAndQueue)
 {
-    cap_ = pfring_open("enp3s0", snaplen, PF_RING_PROMISC);
+    cap_ = pfring_open(name_.c_str(), snaplen, PF_RING_PROMISC);
     if (cap_ == NULL) {
         LOG_SYSERR << "open " << deviceAndQueue << " failed";
         exit(1);
