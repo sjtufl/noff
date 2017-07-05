@@ -20,6 +20,7 @@
 #include <muduo/base/Singleton.h>
 #include <muduo/base/CountDownLatch.h>
 #include <dpi/Udp.h>
+#include <app/header/TcpSession.h>
 
 
 #include "Capture.h"
@@ -32,7 +33,7 @@
 #include "dns/Dnsparser.h"
 #include "header/TcpHeader.h"
 #include "UdpClient.h"
-#include "header/TcpHeader.h"
+#include "header/TcpSession.h"
 
 using namespace std;
 
@@ -49,9 +50,10 @@ unique_ptr<UdpClient>   httpRequestOutput = NULL;
 unique_ptr<UdpClient>   httpResponseOutput = NULL;
 unique_ptr<UdpClient>   dnsRequestOutput = NULL;
 unique_ptr<UdpClient>   dnsResponseOutput = NULL;
-unique_ptr<UdpClient>   packetCounterOutput = NULL;
-unique_ptr<UdpClient>   macCounterOutput = NULL;
 unique_ptr<UdpClient>   tcpHeaderOutput = NULL;
+unique_ptr<UdpClient>   macCounterOutput = NULL;
+unique_ptr<UdpClient>   packetCounterOutput = NULL;
+unique_ptr<UdpClient>   tcpSessionOutPut = NULL;
 
 void sigHandler(int)
 {
@@ -170,6 +172,20 @@ void setTcpHeaderInThread()
             &UdpClient::onData<tcpheader>, tcpHeaderOutput.get(), _1));
 }
 
+void setTcpSessionInThread()
+{
+    assert(tcpSessionOutPut != NULL);
+
+    auto& ip = threadInstance(IpFragment);
+    auto& session = threadInstance(TcpSession);
+
+    ip.addTcpCallback(bind(
+            &TcpSession::onTcpData, &session, _1, _2, _3));
+
+    session.addTcpSessionCallback(bind(
+            &UdpClient::onData<SessionData>, tcpSessionOutPut.get(), _1));
+}
+
 void initInThread()
 {
     assert(cap != NULL);
@@ -198,6 +214,8 @@ void initInThread()
     // tcp->udp
     setTcpHeaderInThread();
 
+    setTcpSessionInThread();
+
     countDown->countDown();
 }
 
@@ -207,14 +225,16 @@ int main(int argc, char **argv)
     char    name[32] = "any";
     int     nPackets = 0;
     int     nWorkers = 1;
-    int     threadQueSize = 65536;
+    int     taskQueSize = 65536;
     bool    fileCapture = false;
     bool    singleThread = false;
-    uint16_t  port = 2333;
+    char    ip_addr[16] = "10.255.0.12";
+    uint16_t  port = 10666;
+    uint16_t  port2 = 30001;
 
     muduo::Logger::setLogLevel(muduo::Logger::INFO);
 
-    while ( (opt = getopt(argc, argv, "f:i:c:t:p:")) != -1)
+    while ( (opt = getopt(argc, argv, "f:i:c:t:h:p:")) != -1)
     {
         switch (opt)
         {
@@ -238,23 +258,33 @@ int main(int argc, char **argv)
                     singleThread = true;
                 }
                 break;
+            case 'h':
+                if (strlen(optarg) >= 16) {
+                    LOG_ERROR << "IP address too long";
+                    exit(1);
+                }
+                strcpy(ip_addr, optarg);
+                break;
             case 'p':
                 port = (uint16_t)atoi(optarg);
                 break;
             default:
-                LOG_ERROR << "usage: [-i interface] [-c packet count] [-t threads] [-p port]";
+                LOG_ERROR << "usage: [-i interface] [-c packet count] [-t threads] [-h ip] [-p port]";
                 exit(1);
         }
     }
 
     //define the udp client
-    httpRequestOutput.reset(new UdpClient({"127.0.0.1", port++}, "http request"));
-    httpResponseOutput.reset(new UdpClient({"127.0.0.1", port++}, "http response"));
-    dnsRequestOutput.reset(new UdpClient({"127.0.0.1", port++}, "dns request"));
-    dnsResponseOutput.reset(new UdpClient({"127.0.0.1", port++}, "dns response"));
-    packetCounterOutput.reset(new UdpClient({"127.0.0.1", port++}, "packet counter"));
-    macCounterOutput.reset(new UdpClient({"127.0.0.1", port++}, "mac counter"));
-    tcpHeaderOutput.reset(new UdpClient({"127.0.0.1", port++}, "tcp header"));
+    httpRequestOutput.reset(new UdpClient({ ip_addr, port++ }, "http request"));
+    httpResponseOutput.reset(new UdpClient({ ip_addr, port++ }, "http response"));
+    dnsRequestOutput.reset(new UdpClient({ ip_addr, port++ }, "dns request"));
+    dnsResponseOutput.reset(new UdpClient({ ip_addr, port++ }, "dns response"));
+
+    tcpHeaderOutput.reset(new UdpClient({ ip_addr, port2++}, "tcp header"));
+    macCounterOutput.reset(new UdpClient({ ip_addr, port2++ }, "mac counter"));
+    packetCounterOutput.reset(new UdpClient({ip_addr, port2++}, "packet counter"));
+
+    tcpSessionOutPut.reset(new UdpClient({ip_addr, port2++}, "tcp session"));
 
     countDown.reset(new muduo::CountDownLatch(nWorkers));
 
@@ -283,7 +313,7 @@ int main(int argc, char **argv)
     }
     else
     {
-        Dispatcher disp(nWorkers, threadQueSize, &initInThread);
+        Dispatcher disp(nWorkers, taskQueSize, &initInThread);
         cap->addIpFragmentCallback(std::bind(
                 &Dispatcher::onIpFragment, &disp, _1, _2, _3));
 

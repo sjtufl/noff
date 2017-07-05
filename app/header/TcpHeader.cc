@@ -17,6 +17,7 @@ void TcpHeader::processTcpHeader(ip * data,int skblen, timeval timeStamp)
     hdr.srcPort = htons(this_tcphdr->source);
     hdr.dstPort = htons(this_tcphdr->dest);
     hdr.flag = this_tcphdr->th_flags;
+    hdr.len = ntohs(data->ip_len) - 4 * data->ip_hl;
     for(const auto& func:tcpHeaderCallback_)
     {
         func(hdr);
@@ -42,6 +43,9 @@ std::string to_string(const tcpheader& hdr)
     res.append(temp);
     res.append("\t");
     sprintf(temp,"%u",hdr.flag);
+    res.append(temp);
+    res.append("\t");
+    sprintf(temp, "%d", hdr.len);
     res.append(temp);
     return res;
 
