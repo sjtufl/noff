@@ -11,6 +11,7 @@
 #include <time.h>
 struct tcpheader
 {
+    timeval         timeStamp;
     unsigned int    srcIP;
     unsigned int    dstIP;
     unsigned short  srcPort;
