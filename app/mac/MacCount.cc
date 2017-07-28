@@ -5,8 +5,9 @@
 #include "MacCount.h"
 #include <net/ethernet.h>
 #include <muduo/base/Logging.h>
+#include <linux/pf_ring.h>
 
-void MacCount::processMac(const pcap_pkthdr * header, const u_char * data, timeval timeStamp)
+void MacCount::processMac(const pfring_pkthdr * header, const u_char * data, timeval timeStamp)
 {
     if (header->caplen <= sizeof(ether_header)) {
         return;

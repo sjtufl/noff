@@ -6,6 +6,7 @@
 #define DNSPARSER_UDP_H
 
 #include "Util.h"
+#include "Callback.h"
 #include <netinet/udp.h>
 #include <netinet/ip.h>
 #include <functional>
@@ -13,7 +14,6 @@
 class Udp
 {
 public:
-    typedef std::function<void(tuple4,char*,int,timeval)> UdpCallback;
     void addUdpCallback(UdpCallback cb)
     {
         udpCallback_.push_back(cb);

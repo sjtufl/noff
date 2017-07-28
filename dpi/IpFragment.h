@@ -13,6 +13,7 @@
 #include <netinet/ip_icmp.h>
 
 #include "Util.h"
+#include "Callback.h"
 
 #define IP_CE		0x8000	/* Flag: "Congestion" */
 #define IP_DF		0x4000	/* Flag: "Don't Fragment" */
@@ -93,10 +94,6 @@ struct ipq
 class IpFragment : muduo::noncopyable
 {
 public:
-    typedef std::function<void(ip*,int,timeval)>    IpCallback;
-    typedef std::function<void(ip*,int,timeval)>    UdpCallback;
-    typedef std::function<void(ip*, int,timeval)>   TcpCallback;
-    typedef std::function<void(ip*,int,timeval)>    IcmpCallback;
     IpFragment();
     IpFragment(size_t n);
     ~IpFragment();
@@ -106,12 +103,12 @@ public:
         ipCallbacks_.push_back(cb);
     }
 
-    void addTcpCallback(const TcpCallback& cb)
+    void addTcpCallback(const IpTcpCallback& cb)
     {
         tcpCallbacks_.push_back(cb);
     }
 
-    void addUdpCallback(const UdpCallback& cb)
+    void addUdpCallback(const IpUdpCallback& cb)
     {
         udpCallbacks_.push_back(cb);
     }
@@ -127,8 +124,8 @@ public:
 
 private:
     std::vector<IpCallback>     ipCallbacks_;
-    std::vector<TcpCallback>    tcpCallbacks_;
-    std::vector<UdpCallback>    udpCallbacks_;
+    std::vector<IpTcpCallback>    tcpCallbacks_;
+    std::vector<IpUdpCallback>    udpCallbacks_;
     std::vector<IcmpCallback>   icmpCallbacks_;
 
     struct hostFrags **fragtable;

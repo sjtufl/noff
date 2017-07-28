@@ -7,6 +7,7 @@
 
 #include "Util.h"
 #include "Hash.h"
+#include "Callback.h"
 #include <vector>
 #include <netinet/ip.h>
 #include <functional>
@@ -89,9 +90,6 @@ struct Timeout
 class TcpFragment : muduo::noncopyable
 {
 public:
-    typedef std::function<void(TcpStream*,timeval)> TcpCallback;
-    typedef std::function<void(TcpStream*,timeval,u_char*,int,int)> DataCallback;
-
     TcpFragment();
     ~TcpFragment();
 
