@@ -31,10 +31,13 @@ void TcpClient::onByteStream(const char *data, size_t len)
     if (n == -1) {
         if (errno == EINTR)
             goto again;
+        else if (errno == EAGAIN)
+            LOG_WARN << "["<< name_ << "] "
+                     << srvaddr_.toIpPort() <<" receiver too slow";
         else
             LOG_SYSERR << "send()";
     }
-    if (send(sockfd_, data, len, 0) != len) {
+    else if (send(sockfd_, data, len, 0) != len) {
         LOG_WARN << "["<< name_ << "] "
                  << srvaddr_.toIpPort() <<" receiver too slow";
     }
