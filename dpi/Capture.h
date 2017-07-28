@@ -6,6 +6,7 @@
 #define NOFF_CAPTURE_H
 
 #include <pcap.h>
+#include <pfring.h>
 #include <functional>
 
 #include <muduo/base/noncopyable.h>
