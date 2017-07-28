@@ -33,6 +33,7 @@
 #include "dns/Dnsparser.h"
 #include "header/TcpHeader.h"
 #include "UdpClient.h"
+#include "TcpClient.h"
 #include "header/TcpSession.h"
 
 using namespace std;
@@ -46,14 +47,21 @@ using std::placeholders::_5;
 unique_ptr<Capture>     cap = NULL;
 unique_ptr<muduo::CountDownLatch>
                         countDown = NULL;
-unique_ptr<UdpClient>   httpRequestOutput = NULL;
-unique_ptr<UdpClient>   httpResponseOutput = NULL;
-unique_ptr<UdpClient>   dnsRequestOutput = NULL;
-unique_ptr<UdpClient>   dnsResponseOutput = NULL;
-unique_ptr<UdpClient>   tcpHeaderOutput = NULL;
-unique_ptr<UdpClient>   macCounterOutput = NULL;
-unique_ptr<UdpClient>   packetCounterOutput = NULL;
-unique_ptr<UdpClient>   tcpSessionOutPut = NULL;
+#define USE_UDP
+#ifdef USE_TCP
+typedef TcpClient Client;
+#else
+typedef UdpClient Client;
+#endif
+
+unique_ptr<Client>   httpRequestOutput = NULL;
+unique_ptr<Client>   httpResponseOutput = NULL;
+unique_ptr<Client>   dnsRequestOutput = NULL;
+unique_ptr<Client>   dnsResponseOutput = NULL;
+unique_ptr<Client>   tcpHeaderOutput = NULL;
+unique_ptr<Client>   macCounterOutput = NULL;
+unique_ptr<Client>   packetCounterOutput = NULL;
+unique_ptr<Client>   tcpSessionOutPut = NULL;
 
 void sigHandler(int)
 {
@@ -97,11 +105,11 @@ void setHttpInThread()
 
     // http request->udp client
     http.addHttpRequestCallback(bind(
-            &UdpClient::onDataPointer<HttpRequest>, httpRequestOutput.get(), _1));
+            &Client::onDataPointer<HttpRequest>, httpRequestOutput.get(), _1));
 
     // http response->udp client
     http.addHttpResponseCallback(bind(
-            &UdpClient::onDataPointer<HttpResponse>, httpResponseOutput.get(), _1));
+            &Client::onDataPointer<HttpResponse>, httpResponseOutput.get(), _1));
 }
 
 void setPacketCounterInThread()
@@ -121,7 +129,7 @@ void setPacketCounterInThread()
             &ProtocolPacketCounter::onUdpData, &counter, _1, _2, _3, _4));
     // packet->udp output
     counter.setCounterCallback(bind(
-            &UdpClient::onData<CounterDetail>, packetCounterOutput.get(), _1));
+            &Client::onData<CounterDetail>, packetCounterOutput.get(), _1));
 }
 
 void setDnsCounterInThread()
@@ -136,11 +144,11 @@ void setDnsCounterInThread()
             &DnsParser::processDns, &dns, _1, _2, _3, _4));
 
     dns.addRequstecallback(bind(
-            &UdpClient::onData<DnsRequest>,
+            &Client::onData<DnsRequest>,
             dnsRequestOutput.get(), _1));
 
     dns.addResponsecallback(bind(
-            &UdpClient::onData<DnsResponse>,
+            &Client::onData<DnsResponse>,
             dnsResponseOutput.get(), _1));
 }
 
@@ -155,7 +163,7 @@ void setMacCounterInThread()
             &MacCount::processMac, &mac, _1, _2, _3));
 
     mac.addEtherCallback(bind(
-            &UdpClient::onData<MacInfo>, macCounterOutput.get(), _1));
+            &Client::onData<MacInfo>, macCounterOutput.get(), _1));
 }
 
 void setTcpHeaderInThread()
@@ -169,7 +177,7 @@ void setTcpHeaderInThread()
             &TcpHeader::processTcpHeader, &header, _1, _2, _3));
 
     header.addTcpHeaderCallback(bind(
-            &UdpClient::onData<tcpheader>, tcpHeaderOutput.get(), _1));
+            &Client::onData<tcpheader>, tcpHeaderOutput.get(), _1));
 }
 
 void setTcpSessionInThread()
@@ -183,7 +191,7 @@ void setTcpSessionInThread()
             &TcpSession::onTcpData, &session, _1, _2, _3));
 
     session.addTcpSessionCallback(bind(
-            &UdpClient::onData<SessionData>, tcpSessionOutPut.get(), _1));
+            &Client::onData<SessionData>, tcpSessionOutPut.get(), _1));
 }
 
 void initInThread()
@@ -275,16 +283,16 @@ int main(int argc, char **argv)
     }
 
     //define the udp client
-    httpRequestOutput.reset(new UdpClient({ ip_addr, port++ }, "http request"));
-    httpResponseOutput.reset(new UdpClient({ ip_addr, port++ }, "http response"));
-    dnsRequestOutput.reset(new UdpClient({ ip_addr, port++ }, "dns request"));
-    dnsResponseOutput.reset(new UdpClient({ ip_addr, port++ }, "dns response"));
+    httpRequestOutput.reset(new Client({ ip_addr, port++ }, "http request"));
+    httpResponseOutput.reset(new Client({ ip_addr, port++ }, "http response"));
+    dnsRequestOutput.reset(new Client({ ip_addr, port++ }, "dns request"));
+    dnsResponseOutput.reset(new Client({ ip_addr, port++ }, "dns response"));
 
-    tcpHeaderOutput.reset(new UdpClient({ ip_addr, port2++}, "tcp header"));
-    macCounterOutput.reset(new UdpClient({ ip_addr, port2++ }, "mac counter"));
-    packetCounterOutput.reset(new UdpClient({ip_addr, port2++}, "packet counter"));
+    tcpHeaderOutput.reset(new Client({ ip_addr, port2++}, "tcp header"));
+    macCounterOutput.reset(new Client({ ip_addr, port2++ }, "mac counter"));
+    packetCounterOutput.reset(new Client({ip_addr, port2++}, "packet counter"));
 
-    tcpSessionOutPut.reset(new UdpClient({ip_addr, port2++}, "tcp session"));
+    tcpSessionOutPut.reset(new Client({ip_addr, port2++}, "tcp session"));
 
     countDown.reset(new muduo::CountDownLatch(nWorkers));
 

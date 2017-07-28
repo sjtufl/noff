@@ -23,13 +23,6 @@ UdpClient::UdpClient(const InetAddress& srvaddr, const std::string& name)
     LOG_INFO << "["<< name << "] " << srvaddr.toIpPort();
 }
 
-void UdpClient::bind(const muduo::net::InetAddress& cliaddr)
-{
-    if (::bind(sockfd_, cliaddr.getSockAddr(), sizeof(sockaddr_in)) == -1) {
-        LOG_SYSERR << "bind error";
-    }
-}
-
 void UdpClient::onByteStream(const char *data, size_t len)
 {
     assert(data != NULL);

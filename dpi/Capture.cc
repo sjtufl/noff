@@ -175,7 +175,7 @@ void Capture::onPacket(const pcap_pkthdr *hdr, const u_char *data, timeval timeS
                 linkOffset_ = 18;
             }
             else if (data[12] != 0x08 || data[13] != 0x00) {
-                LOG_DEBUG << "Capture: receive none IP packet";
+                LOG_TRACE << "Capture: receive none IP packet";
                 return;
             }
             break;

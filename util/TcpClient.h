@@ -1,9 +1,9 @@
 //
-// Created by root on 17-5-6.
+// Created by root on 17-7-28.
 //
 
-#ifndef NOFF_UDPCLIENT_H
-#define NOFF_UDPCLIENT_H
+#ifndef NOFF_TCPCLIENT_H
+#define NOFF_TCPCLIENT_H
 
 #include <arpa/inet.h>
 
@@ -12,11 +12,11 @@
 #include <muduo/net/Buffer.h>
 #include <muduo/net/InetAddress.h>
 
-class UdpClient : muduo::noncopyable
+class TcpClient : muduo::noncopyable
 {
 public:
-    UdpClient(const muduo::net::InetAddress& srvaddr, const std::string& name = "debug");
-    ~UdpClient()
+    TcpClient(const muduo::net::InetAddress& srvaddr, const std::string& name = "debug");
+    ~TcpClient()
     {
         close(sockfd_);
     }
@@ -32,7 +32,7 @@ public:
         using namespace std; // ??? wtf
 
         std::string buffer = to_string(data);
-        buffer.append("\n");
+        buffer.append("\r\n");
 
         onByteStream(buffer.data(), buffer.length());
     }
@@ -47,7 +47,9 @@ private:
     void onByteStream(const char *data, size_t len);
 
     muduo::net::InetAddress srvaddr_;
+    std::string name_;
     int sockfd_;
 };
 
-#endif //NOFF_UDPCLIENT_H
+
+#endif //NOFF_TCPCLIENT_H
