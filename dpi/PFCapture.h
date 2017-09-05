@@ -6,10 +6,14 @@
 #define NOFF_PFCAPTURE_H
 
 #include <vector>
+#include <signal.h>
 #include <pfring.h>
 #include <netinet/ip.h>
+#include <muduo/base/Thread.h>
 
 #include "Callback.h"
+
+using muduo::Thread;
 
 class PFCapture : muduo::noncopyable
 {
@@ -21,41 +25,55 @@ public:
             breakLoop();
         }
         logCaptureStats();
+        for (pfring *p : ring_) {
+            pfring_close(p);
+        }
     }
+
+    void setThreadInitCallback(const ThreadFunc &func);
 
     void addPacketCallBack(const PacketCallback& cb)
     {
         packetCallbacks_.push_back(cb);
     }
 
-    void addIpFragmentCallback(const IpFragmentCallback& cb)
+    void startLoop()
     {
-        ipFragmentCallbacks_.push_back(cb);
+        assert(!running_);
+        running_ = 1;
+
+        for (int i = 0; i < n_ring_; ++i) {
+            threads[i]->start();
+        }
     }
 
-    void startLoop();
-
-    // not thread safe, just call in signal handler
+    // just call in signal handler
     void breakLoop()
     {
         assert(running_);
         running_ = 0;
-        pfring_breakloop(ring_);
+        for (int i = 0; i < n_ring_; ++i) {
+            pfring_breakloop(ring_[i]);
+            threads[i]->join();
+        }
     }
 
     void setFilter(const char *filter);
 
 private:
-    pfring *ring_;
+    std::vector<std::unique_ptr<Thread>> threads;
+    std::vector<pfring*> ring_;
+    int n_ring_;
+    std::string name_;
 
-    std::string     name_;
+    ThreadFunc initFunc_;
 
-    volatile sig_atomic_t running_;
+    int  running_;
 
-    std::vector<PacketCallback>      packetCallbacks_;
-    std::vector<IpFragmentCallback>  ipFragmentCallbacks_;
+    std::vector<PacketCallback> packetCallbacks_;
 
     void logCaptureStats();
+    void threadRun(pfring *ring);
 };
 
 

@@ -13,7 +13,7 @@
 
 TcpFragment::TcpFragment()
 {
-    LOG_INFO << "TcpFragment: started";
+    LOG_DEBUG << "TcpFragment: started";
     int num_tcp_stream = 500000;
     tcpInit(num_tcp_stream);
 }

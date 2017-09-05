@@ -16,9 +16,6 @@
 #include <muduo/base/Mutex.h>
 #include <muduo/base/Timestamp.h>
 #include <muduo/base/Atomic.h>
-#include <muduo/base/ThreadLocalSingleton.h>
-#include <muduo/base/Singleton.h>
-#include <muduo/base/CountDownLatch.h>
 #include <dpi/Udp.h>
 #include <app/header/TcpSession.h>
 
@@ -32,7 +29,7 @@
 #include "dns/Dnsparser.h"
 #include "header/TcpHeader.h"
 #include "UdpClient.h"
-#include "TcpClient.h"
+#include "NoffServer.h"
 #include "header/TcpSession.h"
 
 using namespace std;
@@ -43,9 +40,9 @@ using std::placeholders::_3;
 using std::placeholders::_4;
 using std::placeholders::_5;
 
-#define USE_UDP
+#define USE_TCP
 #ifdef USE_TCP
-typedef TcpClient Client;
+typedef NoffServer Client;
 #else
 typedef UdpClient Client;
 #endif
@@ -66,13 +63,10 @@ void sigHandler(int)
 {
     assert(cap != NULL);
     cap->breakLoop();
+#ifdef USE_TCP
+    NoffServer::breakLoop();
+#endif
 }
-
-#define threadInstance(Type) \
-muduo::ThreadLocalSingleton<Type>::instance()
-
-#define globalInstance(Type) \
-muduo::Singleton<Type>::instance()
 
 void setHttpInThread()
 {
@@ -161,6 +155,9 @@ void setMacCounterInThread()
     cap->addPacketCallBack(bind(
             &MacCount::processMac, &mac, _1, _2, _3));
 
+//    cap2->addPacketCallBack(bind(
+//            &MacCount::processMac, &mac, _1, _2, _3));
+
     mac.addEtherCallback(bind(
             &Client::onData<MacInfo>, macCounterOutput.get(), _1));
 }
@@ -227,21 +224,21 @@ void initInThread()
 int main(int argc, char **argv)
 {
     int opt;
-    char name[32] = "empty";
+    char dev[32] = "empty";
     char ip_addr[16] = "127.0.0.1";
     uint16_t port = 10666;
     uint16_t port2 = 30001;
 
     muduo::Logger::setLogLevel(muduo::Logger::INFO);
 
-    while ((opt = getopt(argc, argv, "i:h:")) != -1) {
+    while ((opt = getopt(argc, argv, "i:j:h:")) != -1) {
         switch (opt) {
             case 'i':
                 if (strlen(optarg) >= 31) {
                     LOG_ERROR << "device name too long";
                     exit(1);
                 }
-                strcpy(name, optarg);
+                strcpy(dev, optarg);
                 break;
             case 'h':
                 if (strlen(optarg) >= 16) {
@@ -268,19 +265,23 @@ int main(int argc, char **argv)
 
     tcpSessionOutPut.reset(new Client({ip_addr, port2++}, "tcp session"));
 
-    cap.reset(new Cap(name));
+    cap.reset(new Cap(dev));
     cap->setFilter("ip");
 
 
     signal(SIGINT, sigHandler);
 
-    // pcap->mac counter->udp
-    setMacCounterInThread();
+//     pcap->mac counter->udp
+     setMacCounterInThread();
 
-    initInThread();
-
-    auto &ip = threadInstance(IpFragment);
-    cap->addIpFragmentCallback(std::bind(
-            &IpFragment::startIpfragProc, &ip, _1, _2, _3));
+    cap->setThreadInitCallback([](){
+        initInThread();
+    });
     cap->startLoop();
+
+#ifdef USE_TCP
+    NoffServer::startLoop();
+#else
+    pause();
+#endif
 }

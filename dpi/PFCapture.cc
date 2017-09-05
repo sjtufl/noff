@@ -4,51 +4,79 @@
 
 #include <muduo/base/Logging.h>
 #include "PFCapture.h"
+#include "IpFragment.h"
 #include <pcap.h>
+#include <pfring.h>
 
 using std::placeholders::_1;
 using std::placeholders::_2;
 using std::placeholders::_3;
 
 PFCapture::PFCapture(const char *dev)
-        :running_(0),
-         name_(dev)
+        :name_(dev),
+        running_(0)
+
 {
-    ring_ = pfring_open(name_.c_str(), 65700, PF_RING_PROMISC);
-    if (ring_ == nullptr) {
-        LOG_SYSFATAL << "pfring_open()";
+    pfring *ring[MAX_NUM_RX_CHANNELS];
+    n_ring_ = pfring_open_multichannel(name_.c_str(),
+                                       65700, PF_RING_PROMISC, ring);
+    if (n_ring_ == 0) {
+        LOG_SYSFATAL << "pfring_open_multichannel()";
     }
 
-    if (pfring_enable_ring(ring_) != 0) {
-       LOG_SYSFATAL << "pfring_enable_ring()";
+    char name[32];
+    for (int i = 0; i < n_ring_; ++i) {
+        snprintf(name, 32, "PF_RING %d", i);
+        ring_.push_back(ring[i]);
+        threads.emplace_back(new Thread([=](){
+            threadRun(ring[i]);
+        }, name));
     }
+    for (pfring *p : ring_) {
+        if (pfring_enable_ring(p) != 0) {
+            LOG_SYSFATAL << "pfring_enable_ring()";
+        }
+    }
+    LOG_INFO << n_ring_ << " threads started";
 }
 
-void PFCapture::startLoop()
+void PFCapture::setThreadInitCallback(const ThreadFunc &func)
 {
-    assert(!running_);
-    running_ = 1;
-    pfring_loop()
-    u_char          *buffer;
-    pfring_pkthdr   hdr;
+    initFunc_ = func;
+}
+
+void PFCapture::threadRun(pfring *ring)
+{
+    if (initFunc_ != NULL) {
+        initFunc_();
+    }
+
+    auto &ipFrag = threadInstance(IpFragment);
+
+    u_int len = 65660;
+    u_char buffer_data[len];
+    pfring_pkthdr hdr;
     while (running_) {
-        int ret = pfring_recv_parsed(ring_, &buffer, 65660, &hdr, 1, 4, 0, 0);
+        u_char *buffer = buffer_data;
+        int ret = pfring_recv(ring, &buffer, len, &hdr, 1);
         if (ret != 1) {
-            LOG_SYSERR << "pfring_recv_parsed()";
+            LOG_SYSERR << "pfring_recv()";
             continue;
         }
 
-        for (auto& func : packetCallbacks_)
+        int offset;
+
+        if (buffer[12] == 0x08 && buffer[13] == 0x00)
+            offset = 14;
+        else if (buffer[12] == 0x81 && buffer[13] == 0)
+            offset = 18;
+        else
+            continue;
+
+        for (auto &func : packetCallbacks_)
             func(&hdr, buffer, hdr.ts);
 
-        if (hdr.extended_hdr.parsed_pkt.l3_proto == IPPROTO_IP) {
-            size_t offset = hdr.extended_hdr.parsed_pkt.offset.
-            for (auto &func : ipFragmentCallbacks_) {
-                func((ip *) (buffer + hdr.extended_hdr.parsed_pkt.),
-                     hdr->caplen - linkOffset_,
-                     timeStamp);
-            }
-        }
+        ipFrag.startIpfragProc(((ip*)(buffer + offset)), hdr.caplen - offset, hdr.ts);
     }
 }
 
@@ -60,8 +88,10 @@ void PFCapture::setFilter(const char *filter)
 
     char data[32];
     strcpy(data, filter);
-    if (pfring_set_bpf_filter(ring_, data) != 0) {
-        LOG_FATAL << "set filter failed";
+    for (pfring *p : ring_) {
+        if (pfring_set_bpf_filter(p, data) != 0) {
+            LOG_SYSFATAL << "set filter failed";
+        }
     }
 }
 
@@ -107,9 +137,13 @@ void PFCapture::setFilter(const char *filter)
 
 void PFCapture::logCaptureStats()
 {
-    pfring_stat stat;
-    pfring_stats(ring_, &stat);
+    pfring_stat stat, total = {0, 0};
+    for (pfring *p : ring_) {
+        pfring_stats(p, &stat);
+        total.recv += stat.recv;
+        total.drop += stat.drop;
+    }
     LOG_INFO << name_
-             << ": receive packet " << stat.recv
-             << ", drop by kernel " << stat.drop;
+             << ": receive packet " << total.recv
+             << ", drop by kernel " << total.drop;
 }
