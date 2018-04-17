@@ -5,11 +5,14 @@
 #ifndef DNSPARSER_DNSPARSER_H
 #define DNSPARSER_DNSPARSER_H
 
-#include "../../dpi/Util.h"
-#include <stdlib.h>
+#include "dpi/Util.h"
+#include "util/TopicServer.h"
+
+#include <cstdlib>
 #include <list>
 #include <functional>
 #include <vector>
+
 struct DnsQuestion
 {
     char * name;
@@ -72,26 +75,41 @@ struct DnsResponse
 std::string to_string(const DnsRequest&);
 std::string to_string(const DnsResponse&);
 
+using muduo::net::EventLoop;
+using muduo::net::InetAddress;
+
 class DnsParser
 {
 public:
     typedef std::function<void(DnsResponse&)> ResponseCallback;
     typedef std::function<void(DnsRequest&)> RequestCallback;
-    void addRequstecallback(const RequestCallback& cb)
-    {
-        dnsrequestCallback_.push_back(cb);
-    }
-    void addResponsecallback(const ResponseCallback& cb)
-    {
-        dnsresponseCallback_.push_back(cb);
-    }
-    DnsParser();
+
+public:
+    DnsParser(EventLoop* loop,
+              const InetAddress& request,
+              const InetAddress& response);
     ~DnsParser();
+
+    void start()
+    {
+        requestServer_.start();
+        responseServer_.start();
+    }
+
+    void addRequstecallback(const RequestCallback& cb)
+    { dnsrequestCallback_.push_back(cb); }
+    void addResponsecallback(const ResponseCallback& cb)
+    { dnsresponseCallback_.push_back(cb); }
+
     u_int32_t processDns(tuple4 udptuple, char* data, int datalen,timeval timeStamp);
 
 private:
     std::vector<RequestCallback> dnsrequestCallback_;
     std::vector<ResponseCallback> dnsresponseCallback_;
+
+    EventLoop* loop_;
+    TopicServer requestServer_;
+    TopicServer responseServer_;
 
     u_int32_t parserQuestions(char* data,u_int32_t pos,u_int16_t count,DnsInfo&,int);
     char* readRRname(char* data,u_int32_t* pos,u_int32_t id_pos,int datalen);
@@ -101,7 +119,6 @@ private:
     u_int32_t numRequest;
     u_int32_t numResponse;
     u_int32_t numUdp;
-
 };
 
 #endif //DNSPARSER_DNSPARSER_H

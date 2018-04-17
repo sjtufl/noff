@@ -12,41 +12,46 @@
 #include <unordered_set>
 #include <netinet/ip.h>
 
-#include <muduo/base/noncopyable.h>
+#include <util/noncopyable.h>
 #include <boost/circular_buffer.hpp>
 
 #include "dpi/Util.h"
 #include "dpi/Sharding.h"
 #include "util/Timer.h"
+#include "util/TopicServer.h"
 
 struct SessionData;
 std::string to_string(const SessionData&);
 
-class TcpSession: muduo::noncopyable
+using muduo::net::EventLoop;
+using muduo::net::InetAddress;
+
+class TcpSession: noncopyable
 {
 public:
     typedef std::function<void(SessionData&)> TcpSessionCallback;
 
-    explicit
-    TcpSession(size_t timeoutSeconds = 60) :
-            sessionBuckets_(timeoutSeconds)
-    {
-    }
+    TcpSession(EventLoop* loop,
+               const InetAddress& listenAddr,
+               size_t timeoutSeconds = 60)
+              : loop_(loop),
+                server_(loop, listenAddr, "tcp session"),
+                sessionBuckets_(timeoutSeconds)
+    {}
 
     void addTcpSessionCallback(const TcpSessionCallback& cb)
-    {
-        callbacks_.push_back(cb);
-    }
+    { callbacks_.push_back(cb); }
 
     void onTcpData(ip *iphdr, int len, timeval timeStamp);
 
-private:
+    void start() { server_.start(); }
 
+private:
     typedef std::vector<TcpSessionCallback> Callbacks;
     typedef std::shared_ptr<SessionData> SessionDataPtr;
     typedef std::weak_ptr<SessionData> WeakSessionDataPtr;
 
-    struct Entry: muduo::noncopyable
+    struct Entry: noncopyable
     {
         explicit
         Entry(const WeakSessionDataPtr& weak,
@@ -84,16 +89,21 @@ private:
     typedef std::unordered_map<tuple4, SessionDataPtr,
             Sharding, Tuple4HashEqual> SessionDataMap;
 
+private:
     Callbacks       callbacks_;
     SessionDataMap  sessionDataMap_;
-    Timer           timer_;
+    ::Timer           timer_;
+
+    EventLoop* loop_;
+    TopicServer server_;
 
     WeakSessionDataList sessionBuckets_;
 
+private:
     void onTimer();
     void onConnection(const tuple4 &, SessionDataPtr&);
     void onTimeOut(const SessionDataPtr &);
-    void updateSession(const tuple4 &, SessionDataPtr &, int len, u_int8_t flag);
+    void updateSession(const tuple4 &, const tcphdr& hdr, SessionDataPtr &, int len);
     EntryPtr getEntryPtr(SessionDataPtr &);
 };
 

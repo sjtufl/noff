@@ -73,7 +73,7 @@ string to_string(const HttpRequest &rqst)
     buffer.append("\t");
     buffer.append(getVaule(rqst.headers, "user-agent"));
 
-    return buffer;
+    return buffer.append("\n");
 }
 
 string to_string(const HttpResponse &rsps)
@@ -90,7 +90,7 @@ string to_string(const HttpResponse &rsps)
     buffer.append("\t");
     buffer.append(getVaule(rsps.headers, "content-type"));
 
-    return buffer;
+    return buffer.append("\n");
 }
 
 int Http::onHeaderFiled(HttpParser *parser, const char *data, size_t len)
@@ -210,9 +210,11 @@ int Http::onHeadersComplete(HttpParser *parser)
             request->method = http_method_str(
                     (enum http_method) parser->method);
 
-            for (auto &func : http->httpRequestCallbacks_) {
-                func(request);
-            }
+//            for (auto &func : http->httpRequestCallbacks_) {
+//                func(request);
+//            }
+            http->requestServer_.send(to_string(*request));
+
             request->headers.clear();
             request->bytes = 0;
         }
@@ -222,9 +224,12 @@ int Http::onHeadersComplete(HttpParser *parser)
         {
             HttpResponse *response = http->currentHttpResponse;
 
-            for (auto &func : http->httpResponseCallback_) {
-                func(response);
-            }
+//            for (auto &func : http->httpResponseCallback_) {
+//                func(response);
+//            }
+
+            http->responseServer_.send(to_string(*response));
+
             response->headers.clear();
             response->bytes = 0;
         }
@@ -250,6 +255,15 @@ http_parser_settings Http::settings = {
         NULL,               // on_chunk_header;
         NULL,               // on_chunk_complete;
 };
+
+Http::Http(EventLoop* loop,
+           const InetAddress& request,
+           const InetAddress& response)
+        : loop_(loop),
+          requestServer_(loop, request, "http request"),
+          responseServer_(loop, response, "http response")
+{
+}
 
 void Http::onTcpConnection(TcpStream *stream, timeval timeStamp)
 {

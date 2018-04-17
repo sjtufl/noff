@@ -20,8 +20,9 @@ PFCapture::PFCapture(const char *dev)
     pfring *ring[MAX_NUM_RX_CHANNELS];
     n_ring_ = pfring_open_multichannel(name_.c_str(),
                                        65700, PF_RING_PROMISC, ring);
+
     if (n_ring_ == 0) {
-        LOG_SYSFATAL << "pfring_open_multichannel()";
+        LOG_SYSFATAL << "pfring_open_multichannel(" << name_ << ")";
     }
 
     char name[32];
@@ -29,7 +30,7 @@ PFCapture::PFCapture(const char *dev)
         snprintf(name, 32, "PF_RING %d", i);
         ring_.push_back(ring[i]);
         threads.emplace_back(new Thread([=](){
-            threadRun(ring[i]);
+            threadRun(ring_[i]);
         }, name));
     }
     for (pfring *p : ring_) {

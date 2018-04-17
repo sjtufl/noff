@@ -8,7 +8,7 @@
 #include <functional>
 #include <array>
 
-#include <muduo/base/noncopyable.h>
+#include <util/noncopyable.h>
 #include <muduo/base/Atomic.h>
 #include <muduo/base/Mutex.h>
 #include <muduo/base/Singleton.h>
@@ -16,7 +16,7 @@
 #include "UdpClient.h"
 
 template <uint16_t PORT>
-class TestCounter:muduo::noncopyable
+class TestCounter: noncopyable
 {
 public:
 

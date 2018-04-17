@@ -12,20 +12,55 @@ enum {
     upPacketNum,
     upSyn, upFin, upPsh, upRst,
     upSmallPacketNum,
+    upRxmit,
+    upRtt,
 
     downFlowSize,
     downPacketNum,
     downSyn, downFin, downPsh, downRst,
     downSmallPacketNum,
+    downRxmit,
+    downRtt,
+
+    totalFieldNum
 };
+
+struct Seq
+{
+    uint32_t data_ = 0;
+    bool valid_ = false;
+
+    Seq(uint32_t data)
+            : data_(data)
+            , valid_(true)
+    {}
+
+    Seq() {}
+
+    bool valid() const { return valid_; }
+    void set(uint32_t data)
+    {
+        data_ = data;
+        valid_ = true;
+    }
+};
+
+bool operator==(Seq& lhs, Seq& rhs) { return lhs.data_ == rhs.data_; }
+bool operator< (Seq& lhs, Seq& rhs) { return (int32_t)(lhs.data_ - rhs.data_) <  0; }
+bool operator<=(Seq& lhs, Seq& rhs) { return (int32_t)(lhs.data_ - rhs.data_) <= 0; }
+bool operator> (Seq& lhs, Seq& rhs) { return (int32_t)(lhs.data_ - rhs.data_) >  0; }
+bool operator>=(Seq& lhs, Seq& rhs) { return (int32_t)(lhs.data_ - rhs.data_) >= 0; }
 
 struct SessionData
 {
     tuple4  t4_;
     timeval startTime_;
     timeval endTime_;
+    Seq     upSeq;
+    Seq     downSeq;
+//    timeval
 
-    std::array<int, 14> info = {};
+    std::array<int, totalFieldNum> info = {};
 
     bool normallyClosed_ = true;
 
@@ -33,11 +68,10 @@ struct SessionData
 
     SessionData(tuple4 t4, timeval timeStamp) :
             t4_(t4), startTime_(timeStamp)
-    {
-    }
+    {}
 };
 
-std::string to_string(const SessionData &data)
+std::string to_string(const SessionData& data)
 {
     using std::string;
     using std::to_string;
@@ -53,17 +87,26 @@ std::string to_string(const SessionData &data)
     ret.append("\t");
     ret.append(to_string(data.normallyClosed_));
 
-    return ret;
+    return ret.append("\n");
 }
 
-void TcpSession::onTcpData(ip *iphdr, int len, timeval timeStamp)
+void TcpSession::onTcpData(ip *iphdr, int, timeval timeStamp)
 {
+    int len = ntohs(iphdr->ip_len);
+
     len -= 4 * iphdr->ip_hl;
     if (len < (int)sizeof(tcphdr)) {
         return;
     }
 
     tcphdr *tcp = (tcphdr *)((u_char*)iphdr + 4 * iphdr->ip_hl);
+    if (len < 4 * tcp->th_off) {
+        len = 0;
+    }
+    else {
+        len -= 4 * tcp->th_off;
+    }
+
 
     tuple4 t4(htons(tcp->source),
               htons(tcp->dest),
@@ -81,11 +124,11 @@ void TcpSession::onTcpData(ip *iphdr, int len, timeval timeStamp)
     auto it = sessionDataMap_.find(t4);
 
     if (it == sessionDataMap_.end()) {
-        /* first connection */
+        /* first packet */
         if (flag & TH_SYN) {
             auto p = sessionDataMap_.insert({t4, std::make_shared<SessionData>(t4, timeStamp)});
             onConnection(t4, p.first->second);
-            updateSession(t4, p.first->second, len, flag);
+            updateSession(t4, *tcp, p.first->second, len);
         }
         return;
     }
@@ -99,7 +142,7 @@ void TcpSession::onTcpData(ip *iphdr, int len, timeval timeStamp)
         if (flag & TH_SYN) {
             *ptr = SessionData(t4, timeStamp);
             onConnection(t4, ptr);
-            updateSession(t4, ptr, len, flag);
+            updateSession(t4, *tcp, ptr, len);
         }
         else {
             /* keep size small */
@@ -111,17 +154,18 @@ void TcpSession::onTcpData(ip *iphdr, int len, timeval timeStamp)
     /* close connection */
     if ((flag & TH_FIN) || (flag & TH_RST)) {
         ptr->endTime_ = timeStamp;
-        updateSession(t4, ptr, len, flag);
-        for (auto &cb : callbacks_) {
-            cb(*ptr);
-        }
+        updateSession(t4, *tcp, ptr, len);
+//        for (auto &cb : callbacks_) {
+//            cb(*ptr);
+//        }
+        server_.send(to_string(*ptr));
         sessionDataMap_.erase(it);
         return;
     }
 
     /* message, may have ACK+SYN */
     sessionBuckets_.back().insert(entry);
-    updateSession(t4, ptr, len, flag);
+    updateSession(t4, *tcp, ptr, len);
 }
 
 void TcpSession::onTimer()
@@ -142,35 +186,59 @@ void TcpSession::onTimeOut(const SessionDataPtr& dataPtr)
 {
     dataPtr->normallyClosed_ = false;
     dataPtr->endTime_ = timer_.lastCheckTime();
-    for (auto &cb : callbacks_) {
-        cb(*dataPtr);
-    }
+//    for (auto &cb : callbacks_) {
+//        cb(*dataPtr);
+//    }
+    server_.send(to_string(*dataPtr));
 
     sessionDataMap_.erase(dataPtr->t4_);
 }
 
-void TcpSession::updateSession(const tuple4& t4, SessionDataPtr& dataPtr, int len, u_int8_t flag)
+void TcpSession::updateSession(const tuple4& t4, const tcphdr& hdr, SessionDataPtr& dataPtr, int len)
 {
-    /* up */
-    if (t4 == dataPtr->t4_)
-    {
+    auto flag = hdr.th_flags;
+    Seq dataSeq(ntohl(hdr.seq));
+//    Seq ackSeq(ntohl(hdr.ack_seq));
+
+    if (t4 == dataPtr->t4_) {
+        /* up */
         dataPtr->info[upFlowSize] += len;
         dataPtr->info[upPacketNum] += 1;
-        if (flag & TH_SYN) ++dataPtr->info[upSyn];
-        if (flag & TH_FIN) ++dataPtr->info[upFin];
+        if (flag & TH_SYN)  ++dataPtr->info[upSyn];
+        if (flag & TH_FIN)  ++dataPtr->info[upFin];
         if (flag & TH_PUSH) ++dataPtr->info[upPsh];
-        if (flag & TH_RST) ++dataPtr->info[upRst];
+        if (flag & TH_RST)  ++dataPtr->info[upRst];
         dataPtr->info[upSmallPacketNum] += (len <= 64);
+
+        if (!dataPtr->upSeq.valid()) {
+            dataPtr->upSeq = dataSeq;
+        }
+        else if (dataPtr->upSeq < dataSeq && len > 0) {
+            dataPtr->upSeq = dataSeq;
+        }
+        else if (len > 0) {
+            ++dataPtr->info[upRxmit];
+        }
     }
-        /* down */
     else {
+        /* down */
         dataPtr->info[downFlowSize] += len;
         dataPtr->info[downPacketNum] += 1;
-        if (flag & TH_SYN) ++dataPtr->info[downSyn];
-        if (flag & TH_FIN) ++dataPtr->info[downFin];
+        if (flag & TH_SYN)  ++dataPtr->info[downSyn];
+        if (flag & TH_FIN)  ++dataPtr->info[downFin];
         if (flag & TH_PUSH) ++dataPtr->info[downPsh];
-        if (flag & TH_RST) ++dataPtr->info[downRst];
+        if (flag & TH_RST)  ++dataPtr->info[downRst];
         dataPtr->info[downSmallPacketNum] += (len <= 64);
+
+        if (!dataPtr->downSeq.valid()) {
+            dataPtr->downSeq = dataSeq;
+        }
+        else if (dataPtr->downSeq < dataSeq && len > 0) {
+            dataPtr->downSeq = dataSeq;
+        }
+        else if (len > 0) {
+            ++dataPtr->info[downRxmit];
+        }
     }
 }
 

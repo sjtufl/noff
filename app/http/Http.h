@@ -10,12 +10,14 @@
 #include <string>
 #include <vector>
 
-#include <muduo/base/noncopyable.h>
+#include <util/noncopyable.h>
 #include <muduo/net/InetAddress.h>
 
 #include "dpi/Sharding.h"
 #include "dpi/TcpFragment.h"
 #include "dpi/Util.h"
+
+#include "util/TopicServer.h"
 
 #include "HttpParser.h"
 
@@ -74,12 +76,20 @@ struct HttpResponse
 std::string to_string(const HttpRequest &);
 std::string to_string(const HttpResponse &);
 
-class Http : muduo::noncopyable
+using muduo::net::EventLoop;
+using muduo::net::InetAddress;
+
+class Http: noncopyable
 {
 public:
-
     typedef std::function<void(HttpRequest*)> HttpRequestCallback;
     typedef std::function<void(HttpResponse*)> HttpResponseCallback;
+
+public:
+    Http(EventLoop* loop,
+         const InetAddress& request,
+         const InetAddress& response);
+
 
     void onTcpConnection(TcpStream*, timeval);
     void onTcpData(TcpStream*, timeval, u_char*, int, int );
@@ -88,13 +98,14 @@ public:
     void onTcpTimeout(TcpStream*, timeval);
 
     void addHttpRequestCallback(const HttpRequestCallback& cb)
-    {
-        httpRequestCallbacks_.push_back(cb);
-    }
-
+    { httpRequestCallbacks_.push_back(cb); }
     void addHttpResponseCallback(const HttpResponseCallback& cb)
+    { httpResponseCallback_.push_back(cb); }
+
+    void start()
     {
-        httpResponseCallback_.push_back(cb);
+        requestServer_.start();
+        responseServer_.start();
     }
 
 private:
@@ -135,6 +146,11 @@ private:
     HttpRequest     *currentHttpRequest;
     HttpResponse    *currentHttpResponse;
 
+    EventLoop* loop_;
+    TopicServer requestServer_;
+    TopicServer responseServer_;
+
+private:
     static int onHeaderFiled(HttpParser *parser, const char *data, size_t len);
     static int onHeaderValue(HttpParser *parser, const char *data, size_t len);
     static int onUrl(HttpParser *parser, const char *data, size_t len);

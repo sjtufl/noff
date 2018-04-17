@@ -1,3 +1,4 @@
+/*
 //
 // Created by root on 17-4-21.
 //
@@ -41,6 +42,7 @@ using std::placeholders::_4;
 using std::placeholders::_5;
 
 #define USE_TCP
+
 #ifdef USE_TCP
 typedef NoffServer Client;
 #else
@@ -284,4 +286,63 @@ int main(int argc, char **argv)
 #else
     pause();
 #endif
+}
+*/
+
+#include <muduo/net/EventLoop.h>
+#include <signal.h>
+
+#include "Noff.h"
+
+using muduo::net::EventLoop;
+using muduo::Logger;
+
+EventLoop* g_loop;
+
+void sigHandler(int)
+{
+    g_loop->quit();
+}
+
+int main(int argc, char** argv)
+{
+    if (argc != 2) {
+        printf("usage: ./noff interface");
+        return 0;
+    }
+
+    muduo::Logger::setLogLevel(muduo::Logger::INFO);
+
+    EventLoop loop;
+    g_loop = &loop;
+
+    InetAddress dnsRequestAddr(30100);
+    InetAddress dnsResponseAddr(30200);
+    InetAddress httpRequestAddr(30300);
+    InetAddress httpResponseAddr(30400);
+    InetAddress tcpHeaderAddr(30500);
+    InetAddress tcpSessionAddr(30600);
+    InetAddress packetCounterAddr(30700);
+    InetAddress httpsAddr(30800);
+
+    LOG_INFO << "dns request port " << dnsRequestAddr.toPort();
+    LOG_INFO << "dns response port " << dnsResponseAddr.toPort();
+    LOG_INFO << "http request port " << httpRequestAddr.toPort();
+    LOG_INFO << "http response port " << httpResponseAddr.toPort();
+    LOG_INFO << "tcp header port " << tcpHeaderAddr.toPort();
+    LOG_INFO << "tcp session port " << tcpSessionAddr.toPort();
+    LOG_INFO << "packet counter port " << packetCounterAddr.toPort();
+    LOG_INFO << "https packet port " << httpsAddr.toPort();
+
+    Noff noff(&loop, argv[1]);
+    noff.setDnsTopic(dnsRequestAddr, dnsResponseAddr);
+    noff.setHttpTopic(httpRequestAddr, httpResponseAddr);
+    noff.setTcpHeaderTopic(tcpHeaderAddr);
+    noff.setTcpSessionTopic(tcpSessionAddr);
+    noff.setPacketCounterTopic(packetCounterAddr);
+    noff.setHttpsTopic(httpsAddr);
+    noff.start();
+
+    signal(SIGINT, sigHandler);
+    loop.loop();
 }

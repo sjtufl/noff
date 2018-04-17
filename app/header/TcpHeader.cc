@@ -7,6 +7,12 @@
 #include <string>
 #include <arpa/inet.h>
 
+TcpHeader::TcpHeader(EventLoop *loop, const InetAddress &listenAddr)
+        : loop_(loop),
+          server_(loop, listenAddr, "tcp header")
+{
+}
+
 void TcpHeader::processTcpHeader(ip * data,int skblen, timeval timeStamp)
 {
     ip* this_iphdr = data;
@@ -19,10 +25,12 @@ void TcpHeader::processTcpHeader(ip * data,int skblen, timeval timeStamp)
     hdr.dstPort = htons(this_tcphdr->dest);
     hdr.flag = this_tcphdr->th_flags;
     hdr.len = ntohs(data->ip_len) - 4 * data->ip_hl;
-    for(const auto& func:tcpHeaderCallback_)
-    {
-        func(hdr);
-    }
+//    for(const auto& func:tcpHeaderCallback_)
+//    {
+//        func(hdr);
+//    }
+    server_.send(to_string(hdr));
+//    printf("message: %s\n", to_string(hdr).c_str());
 }
 
 std::string to_string(const tcpheader& hdr)
@@ -50,5 +58,5 @@ std::string to_string(const tcpheader& hdr)
 
     res.append("\t");
     res.append(std::to_string(hdr.len));
-    return res;
+    return res.append("\n");
 }

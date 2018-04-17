@@ -6,10 +6,10 @@
 #define DNSPARSER_TIMER_H
 
 #include <pcap.h>
-#include <muduo/base/noncopyable.h>
 #include <muduo/base/Mutex.h>
+#include <util/noncopyable.h>
 
-class Timer:muduo::noncopyable
+class Timer: noncopyable
 {
 public:
     Timer():time(0)

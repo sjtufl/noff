@@ -5,12 +5,13 @@
 #define NOFF_IP_FRAGMENT_H
 
 #include <functional>
-#include <muduo/base/noncopyable.h>
 #include <vector>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
+
+#include <util/noncopyable.h>
 
 #include "Util.h"
 #include "Callback.h"
@@ -91,7 +92,7 @@ struct ipq
     // struct device *dev;	/* Device - for icmp replies */
 };
 
-class IpFragment : muduo::noncopyable
+class IpFragment : noncopyable
 {
 public:
     IpFragment();

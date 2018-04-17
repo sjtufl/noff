@@ -11,11 +11,13 @@
 #include <netinet/ip.h>
 #include <muduo/base/Thread.h>
 
+#include <util/noncopyable.h>
+
 #include "Callback.h"
 
 using muduo::Thread;
 
-class PFCapture : muduo::noncopyable
+class PFCapture : noncopyable
 {
 public:
     PFCapture(const char *dev);

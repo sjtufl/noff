@@ -5,19 +5,26 @@
 #ifndef NOFF_PUBLISHER_H
 #define NOFF_PUBLISHER_H
 
+#include <set>
+#include <functional>
+
 #include <muduo/net/TcpServer.h>
 #include <muduo/base/Logging.h>
 #include <muduo/net/EventLoop.h>
-#include <set>
+
 
 using namespace muduo;
 using namespace muduo::net;
+using std::placeholders::_1;
+using std::placeholders::_2;
+using std::placeholders::_3;
+using std::placeholders::_4;
+using std::placeholders::_5;
 
 namespace
 {
 const int MAX_CONNECTIONS = 3;
 const int MAX_BUFFERSIZE = 102400;
-EventLoop loop;
 }
 
 class NoffServer
@@ -50,12 +57,12 @@ public:
         onData(*data);
     }
 
-    static void startLoop()
+    void startLoop()
     {
         loop.loop();
     }
 
-    static void breakLoop()
+    void breakLoop()
     {
         loop.quit();
     }
@@ -102,6 +109,7 @@ private:
         return connections_;
     }
 
+    EventLoop loop;
     TcpServer server_;
     MutexLock mutex_;
     ConnectionListPtr connections_;

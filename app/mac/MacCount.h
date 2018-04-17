@@ -6,7 +6,7 @@
 #define DNSPARSER_MACCOUNT_H
 
 #include <util/Timer.h>
-#include <muduo/base/noncopyable.h>
+#include <util/noncopyable.h>
 #include <functional>
 #include <vector>
 #include <pfring.h>
@@ -23,7 +23,7 @@ struct MacInfo
 };
 
 
-class MacCount: muduo::noncopyable
+class MacCount: noncopyable
 {
 
 public:
@@ -41,7 +41,7 @@ public:
     void processMac(const pfring_pkthdr*, const u_char*, timeval);
 private:
     std::vector<EtherCallback> etherCallback_;
-    Timer timer;
+    ::Timer timer;
     MacInfo macInfo;
 };
 

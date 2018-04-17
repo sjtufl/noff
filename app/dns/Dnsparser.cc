@@ -2,9 +2,16 @@
 // Created by root on 17-4-26.
 //
 #include "Dnsparser.h"
-#include <muduo/base/Logging.h>
 
-DnsParser::DnsParser()
+#include <muduo/base/Logging.h>
+#include <muduo/net/EventLoop.h>
+
+DnsParser::DnsParser(EventLoop* loop,
+                     const InetAddress& request,
+                     const InetAddress& response)
+        : loop_(loop),
+          requestServer_(loop, request, "dns request"),
+          responseServer_(loop, response, "dns response")
 {
     numRequest = 0;
     numResponse = 0;
@@ -13,8 +20,8 @@ DnsParser::DnsParser()
 
 DnsParser::~DnsParser()
 {
-    LOG_INFO<<"Udp:"<<numUdp;
-    LOG_INFO<<"DnsRequest:"<<numRequest<<" DnsResponse:"<<numResponse;
+    LOG_DEBUG<<"Udp:"<<numUdp;
+    LOG_DEBUG<<"DnsRequest:"<<numRequest<<" DnsResponse:"<<numResponse;
 }
 
 u_int32_t DnsParser::processDns(tuple4 udptuple, char *data, int datalen, timeval timeStamp)
@@ -68,11 +75,12 @@ u_int32_t DnsParser::processDns(tuple4 udptuple, char *data, int datalen, timeva
             dnsResponse.result.assign(res.data,strlen(res.data));
         }
 
-        for(auto& func:dnsresponseCallback_)
-        {
-            if(!dnsResponse.Rname.empty())
-                func(dnsResponse);
-        }
+//        for(auto& func:dnsresponseCallback_)
+//        {
+//            if(!dnsResponse.Rname.empty())
+//                func(dnsResponse);
+//        }
+        responseServer_.send(to_string(dnsResponse));
 
         for(auto& res:dns.queries)
             free(res.name);
@@ -119,12 +127,12 @@ u_int32_t DnsParser::processDns(tuple4 udptuple, char *data, int datalen, timeva
             dnsRequest.dstip = udptuple.daddr;
             dnsRequest.timeStamp = timeStamp;
         }
-//            LOG_INFO<<"the dns request is:"<<res.name<<"type:"<<res.type;
 
-        for(auto& func:dnsrequestCallback_)
-        {
-            func(dnsRequest);
-        }
+//        for(auto& func:dnsrequestCallback_)
+//        {
+//            func(dnsRequest);
+//        }
+        requestServer_.send(to_string(dnsRequest));
 
         for(auto& res:dns.queries)
             free(res.name);
@@ -365,6 +373,7 @@ std::string to_string(const DnsRequest& dnsrequest)
     temp.append("\t");
     sprintf(data,"%hu",dnsrequest.Qtype);
     temp.append(data);
+    temp.append("\n");
     return temp;
 
 }
@@ -396,6 +405,7 @@ std::string to_string(const DnsResponse& dnsresponse)
     temp.append(data);
     temp.append("\t");
     temp += dnsresponse.result;
+    temp.append("\n");
     return temp;
 }
 

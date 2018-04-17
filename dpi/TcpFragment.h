@@ -8,6 +8,8 @@
 #include "Util.h"
 #include "Hash.h"
 #include "Callback.h"
+#include <util/noncopyable.h>
+
 #include <vector>
 #include <netinet/ip.h>
 #include <functional>
@@ -87,7 +89,7 @@ struct Timeout
     }
 };
 
-class TcpFragment : muduo::noncopyable
+class TcpFragment : noncopyable
 {
 public:
     TcpFragment();

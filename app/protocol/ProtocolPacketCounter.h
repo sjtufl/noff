@@ -8,12 +8,13 @@
 #include <functional>
 #include <array>
 
-#include <muduo/base/noncopyable.h>
+#include <util/noncopyable.h>
 #include <muduo/base/Atomic.h>
 #include <muduo/base/Mutex.h>
 
 #include "TcpFragment.h"
 #include "Timer.h"
+#include "util/TopicServer.h"
 
 #define DNS_PORT        53
 #define SMTP_PORT       25
@@ -28,30 +29,27 @@
 typedef std::array<int, N_PROTOCOLS> CounterDetail;
 std::string to_string(const CounterDetail&);
 
+using muduo::net::EventLoop;
+using muduo::net::InetAddress;
 
-class ProtocolPacketCounter : muduo::noncopyable
+class ProtocolPacketCounter : noncopyable
 {
 public:
-
-    typedef std::function<void(const CounterDetail&)> CounterCallback;
+    ProtocolPacketCounter(EventLoop* loop, const InetAddress& listenAddr);
 
     void onTcpData(TcpStream *stream, timeval timeStamp);
-
     void onUdpData(tuple4, char*, int, timeval timeStamp);
-
-    void setCounterCallback(const CounterCallback& cb)
-    {
-        counterCallback_ = cb;
-    }
+    void start() { server_.start(); }
 
 private:
+    void sendAndClearCounter();
 
-    CounterCallback counterCallback_;
-
-    Timer timer;
-
+private:
     std::array<muduo::AtomicInt32, N_PROTOCOLS>
-            counter;
+            counter_;
+
+    EventLoop* loop_;
+    TopicServer server_;
 };
 
 
