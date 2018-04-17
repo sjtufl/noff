@@ -45,20 +45,27 @@ struct Seq
     }
 };
 
-bool operator==(Seq& lhs, Seq& rhs) { return lhs.data_ == rhs.data_; }
-bool operator< (Seq& lhs, Seq& rhs) { return (int32_t)(lhs.data_ - rhs.data_) <  0; }
-bool operator<=(Seq& lhs, Seq& rhs) { return (int32_t)(lhs.data_ - rhs.data_) <= 0; }
-bool operator> (Seq& lhs, Seq& rhs) { return (int32_t)(lhs.data_ - rhs.data_) >  0; }
-bool operator>=(Seq& lhs, Seq& rhs) { return (int32_t)(lhs.data_ - rhs.data_) >= 0; }
+bool operator==(Seq lhs, Seq rhs) { return lhs.data_ == rhs.data_; }
+bool operator< (Seq lhs, Seq rhs) { return (int32_t)(lhs.data_ - rhs.data_) <  0; }
+bool operator<=(Seq lhs, Seq rhs) { return (int32_t)(lhs.data_ - rhs.data_) <= 0; }
+bool operator> (Seq lhs, Seq rhs) { return (int32_t)(lhs.data_ - rhs.data_) >  0; }
+bool operator>=(Seq lhs, Seq rhs) { return (int32_t)(lhs.data_ - rhs.data_) >= 0; }
 
 struct SessionData
 {
     tuple4  t4_;
     timeval startTime_;
     timeval endTime_;
-    Seq     upSeq;
-    Seq     downSeq;
-//    timeval
+    Seq     upSeq_;
+    Seq     downSeq_;
+
+    // for rtt
+    timeval upTimestamp_;
+    timeval downTimestamp_;
+    Seq oldUpSeq;
+    Seq oldDownSeq;
+    bool waitingUpAck = false;
+    bool waitingDownAck = false;
 
     std::array<int, totalFieldNum> info = {};
 
@@ -68,7 +75,9 @@ struct SessionData
 
     SessionData(tuple4 t4, timeval timeStamp) :
             t4_(t4), startTime_(timeStamp)
-    {}
+    {
+        std::fill(info.begin(), info.end(), 0);
+    }
 };
 
 std::string to_string(const SessionData& data)
@@ -90,7 +99,7 @@ std::string to_string(const SessionData& data)
     return ret.append("\n");
 }
 
-void TcpSession::onTcpData(ip *iphdr, int, timeval timeStamp)
+void TcpSession::onTcpData(ip *iphdr, int, timeval timestamp)
 {
     int len = ntohs(iphdr->ip_len);
 
@@ -114,7 +123,7 @@ void TcpSession::onTcpData(ip *iphdr, int, timeval timeStamp)
               iphdr->ip_dst.s_addr);
 
     /* check timeout */
-    if (timer_.checkTime(timeStamp)) {
+    if (timer_.checkTime(timestamp)) {
         onTimer();
     }
 
@@ -126,9 +135,9 @@ void TcpSession::onTcpData(ip *iphdr, int, timeval timeStamp)
     if (it == sessionDataMap_.end()) {
         /* first packet */
         if (flag & TH_SYN) {
-            auto p = sessionDataMap_.insert({t4, std::make_shared<SessionData>(t4, timeStamp)});
+            auto p = sessionDataMap_.insert({t4, std::make_shared<SessionData>(t4, timestamp)});
             onConnection(t4, p.first->second);
-            updateSession(t4, *tcp, p.first->second, len);
+            updateSession(t4, *tcp, timestamp, p.first->second, len);
         }
         return;
     }
@@ -140,9 +149,9 @@ void TcpSession::onTcpData(ip *iphdr, int, timeval timeStamp)
     if (entry == NULL) {
         /* another connection */
         if (flag & TH_SYN) {
-            *ptr = SessionData(t4, timeStamp);
+            *ptr = SessionData(t4, timestamp);
             onConnection(t4, ptr);
-            updateSession(t4, *tcp, ptr, len);
+            updateSession(t4, *tcp, timestamp, ptr, len);
         }
         else {
             /* keep size small */
@@ -153,11 +162,8 @@ void TcpSession::onTcpData(ip *iphdr, int, timeval timeStamp)
 
     /* close connection */
     if ((flag & TH_FIN) || (flag & TH_RST)) {
-        ptr->endTime_ = timeStamp;
-        updateSession(t4, *tcp, ptr, len);
-//        for (auto &cb : callbacks_) {
-//            cb(*ptr);
-//        }
+        ptr->endTime_ = timestamp;
+        updateSession(t4, *tcp, timestamp, ptr, len);
         server_.send(to_string(*ptr));
         sessionDataMap_.erase(it);
         return;
@@ -165,7 +171,7 @@ void TcpSession::onTcpData(ip *iphdr, int, timeval timeStamp)
 
     /* message, may have ACK+SYN */
     sessionBuckets_.back().insert(entry);
-    updateSession(t4, *tcp, ptr, len);
+    updateSession(t4, *tcp, timestamp, ptr, len);
 }
 
 void TcpSession::onTimer()
@@ -194,14 +200,16 @@ void TcpSession::onTimeOut(const SessionDataPtr& dataPtr)
     sessionDataMap_.erase(dataPtr->t4_);
 }
 
-void TcpSession::updateSession(const tuple4& t4, const tcphdr& hdr, SessionDataPtr& dataPtr, int len)
+void TcpSession::updateSession(const tuple4& t4, const tcphdr& hdr, timeval timestamp, SessionDataPtr& dataPtr, int len)
 {
     auto flag = hdr.th_flags;
     Seq dataSeq(ntohl(hdr.seq));
-//    Seq ackSeq(ntohl(hdr.ack_seq));
+    Seq ackSeq(ntohl(hdr.ack_seq));
 
     if (t4 == dataPtr->t4_) {
         /* up */
+
+        /* update simple filed */
         dataPtr->info[upFlowSize] += len;
         dataPtr->info[upPacketNum] += 1;
         if (flag & TH_SYN)  ++dataPtr->info[upSyn];
@@ -210,14 +218,35 @@ void TcpSession::updateSession(const tuple4& t4, const tcphdr& hdr, SessionDataP
         if (flag & TH_RST)  ++dataPtr->info[upRst];
         dataPtr->info[upSmallPacketNum] += (len <= 64);
 
-        if (!dataPtr->upSeq.valid()) {
-            dataPtr->upSeq = dataSeq;
+        /* update retransmit */
+        if (!dataPtr->upSeq_.valid()) {
+            dataPtr->upSeq_ = dataSeq;
         }
-        else if (dataPtr->upSeq < dataSeq && len > 0) {
-            dataPtr->upSeq = dataSeq;
+        else if (dataPtr->upSeq_ < dataSeq && len > 0) {
+            dataPtr->upSeq_ = dataSeq;
         }
         else if (len > 0) {
             ++dataPtr->info[upRxmit];
+        }
+
+        /* update rtt */
+        if (!dataPtr->waitingDownAck && (len > 0 || (flag & TH_SYN)))
+        {
+            dataPtr->upTimestamp_ = timestamp;
+            dataPtr->oldUpSeq = dataSeq;
+            dataPtr->waitingDownAck = true;
+        }
+        if (dataPtr->waitingUpAck && ackSeq > dataPtr->oldDownSeq)
+        {
+            auto seconds = timestamp.tv_sec - dataPtr->downTimestamp_.tv_sec;
+            auto useconds = timestamp.tv_usec - dataPtr->downTimestamp_.tv_usec;
+
+            auto& rtt = dataPtr->info[downRtt];
+            if (rtt <= 0)
+                rtt = seconds * 1000 + useconds / 1000;
+            else
+                rtt = rtt * 4 / 5 + (seconds * 1000 + useconds / 1000) / 5;
+            dataPtr->waitingUpAck = false;
         }
     }
     else {
@@ -230,14 +259,33 @@ void TcpSession::updateSession(const tuple4& t4, const tcphdr& hdr, SessionDataP
         if (flag & TH_RST)  ++dataPtr->info[downRst];
         dataPtr->info[downSmallPacketNum] += (len <= 64);
 
-        if (!dataPtr->downSeq.valid()) {
-            dataPtr->downSeq = dataSeq;
+        // retransmit
+        if (!dataPtr->downSeq_.valid()) {
+            dataPtr->downSeq_ = dataSeq;
         }
-        else if (dataPtr->downSeq < dataSeq && len > 0) {
-            dataPtr->downSeq = dataSeq;
+        else if (dataPtr->downSeq_ < dataSeq && len > 0) {
+            dataPtr->downSeq_ = dataSeq;
         }
         else if (len > 0) {
             ++dataPtr->info[downRxmit];
+        }
+
+        // rtt
+        if (!dataPtr->waitingUpAck && (len > 0 || (flag & TH_SYN))) {
+            dataPtr->downTimestamp_ = timestamp;
+            dataPtr->oldDownSeq = dataSeq;
+            dataPtr->waitingUpAck = true;
+        }
+        if (dataPtr->waitingDownAck && ackSeq > dataPtr->oldUpSeq) {
+            auto seconds = timestamp.tv_sec - dataPtr->upTimestamp_.tv_sec;
+            auto useconds = timestamp.tv_usec - dataPtr->upTimestamp_.tv_usec;
+
+            auto& rtt = dataPtr->info[upRtt];
+            if (rtt <= 0)
+                rtt = seconds * 1000 + useconds / 1000;
+            else
+                rtt = rtt * 4 / 5 + (seconds * 1000 + useconds / 1000) / 5;
+            dataPtr->waitingDownAck = false;
         }
     }
 }

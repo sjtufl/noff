@@ -42,7 +42,7 @@ public:
     void addTcpSessionCallback(const TcpSessionCallback& cb)
     { callbacks_.push_back(cb); }
 
-    void onTcpData(ip *iphdr, int len, timeval timeStamp);
+    void onTcpData(ip *iphdr, int len, timeval timestamp);
 
     void start() { server_.start(); }
 
@@ -103,7 +103,7 @@ private:
     void onTimer();
     void onConnection(const tuple4 &, SessionDataPtr&);
     void onTimeOut(const SessionDataPtr &);
-    void updateSession(const tuple4 &, const tcphdr& hdr, SessionDataPtr &, int len);
+    void updateSession(const tuple4 &, const tcphdr& hdr, timeval timestamp, SessionDataPtr &, int len);
     EntryPtr getEntryPtr(SessionDataPtr &);
 };
 
