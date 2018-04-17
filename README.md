@@ -10,3 +10,5 @@
 使用：
 
 ./noff interface
+
+app
